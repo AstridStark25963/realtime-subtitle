@@ -3,11 +3,12 @@ import wave
 import json
 import os
 from datetime import datetime
-from tqdm import tqdm  # 添加进度条库
+from deepmultilingualpunctuation import PunctuationModel
+from tqdm import tqdm  # 引入 tqdm 进度条库
+import re
 
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "tools", "models")
 TEMP_DIR = os.path.join(os.path.dirname(__file__), "temp")
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
 
 def list_models():
     """列出可用的语言模型"""
@@ -34,10 +35,10 @@ def recognize_audio_with_timestamps(model, audio_file):
     """使用 Vosk 模型识别音频"""
     recognizer = KaldiRecognizer(model, 16000)
     recognizer.SetWords(True)
-    results = []
+    words = []
 
     with wave.open(audio_file, "rb") as wf:
-        total_frames = wf.getnframes()  # 获取总帧数
+        total_frames = wf.getnframes()
         with tqdm(total=total_frames, desc="Processing audio", unit="frames") as pbar:
             while True:
                 data = wf.readframes(4000)
@@ -45,14 +46,60 @@ def recognize_audio_with_timestamps(model, audio_file):
                     break
                 if recognizer.AcceptWaveform(data):
                     result = json.loads(recognizer.Result())
-                    for word in result.get("result", []):
-                        results.append({
-                            "text": word["word"],
-                            "start": word["start"],
-                            "end": word["end"]
-                        })
-                pbar.update(4000)  # 更新进度条
-    return results
+                    words.extend(result.get("result", []))
+                pbar.update(4000)
+    return words
+
+def clean_sentence(sentence):
+    """清理句子末尾的标点符号，不影响单词内的标点符号"""
+    return re.sub(r'[^\w\s]*$', '', sentence)
+
+def split_sentences_with_punctuation(text):
+    """使用标点符号分句，支持句号、逗号、分号等"""
+    sentences = re.split(r'(?<=[.?!,;])\s*', text)
+    return [sentence.strip() for sentence in sentences if sentence.strip()]
+
+def punctuate_and_split(text):
+    """使用 DeepMultilingualPunctuation 添加标点，并基于标点符号分句"""
+    punctuation_model = PunctuationModel()
+    print("Adding punctuation and splitting sentences...")
+    punctuated_text = punctuation_model.restore_punctuation(text)
+    sentences = split_sentences_with_punctuation(punctuated_text)
+    cleaned_sentences = [clean_sentence(sentence) for sentence in sentences]
+    return cleaned_sentences
+
+def map_sentences_to_timestamps(words, sentences):
+    """将分句结果映射到时间戳"""
+    mapped_sentences = []
+    start_idx = 0
+
+    print("Mapping sentences to timestamps...")
+    with tqdm(total=len(sentences), desc="Mapping sentences", unit="sentence") as pbar:
+        for sentence in sentences:
+            sentence_words = sentence.split()
+            sent_start_word = sentence_words[0]
+            sent_end_word = sentence_words[-1]
+
+            sent_start_time = None
+            sent_end_time = None
+
+            for idx, word in enumerate(words[start_idx:], start=start_idx):
+                if word["word"] == sent_start_word and sent_start_time is None:
+                    sent_start_time = word["start"]
+                if word["word"] == sent_end_word:
+                    sent_end_time = word["end"]
+                    start_idx = idx + 1
+                    break
+
+            if sent_start_time is not None and sent_end_time is not None:
+                mapped_sentences.append({
+                    "text": sentence,
+                    "start": sent_start_time,
+                    "end": sent_end_time
+                })
+            pbar.update(1)
+
+    return mapped_sentences
 
 def log(message):
     """写入日志文件"""
@@ -69,13 +116,26 @@ def main():
         audio_file, base_name = find_latest_audio()
 
         # 执行语音识别
-        timestamps = recognize_audio_with_timestamps(model, audio_file)
+        words = recognize_audio_with_timestamps(model, audio_file)
         log(f"Recognition completed for audio: {audio_file}")
 
-        # 返回识别结果和基础文件名
-        print("Recognition completed successfully.")
-        return timestamps, base_name
+        # 提取识别文本
+        text = " ".join([word["word"] for word in words])
+
+        # 分句并添加标点
+        sentences = punctuate_and_split(text)
+
+        # 映射时间戳
+        mapped_sentences = map_sentences_to_timestamps(words, sentences)
+        log(f"Mapping completed for audio: {audio_file}")
+
+        # 返回映射结果和基础文件名
+        print("Recognition and mapping completed successfully.")
+        return mapped_sentences, base_name
 
     except Exception as e:
         log(f"Error: {e}")
         print("An error occurred. Check the log file for details.")
+
+if __name__ == "__main__":
+    main()
