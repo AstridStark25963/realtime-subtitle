@@ -51,7 +51,7 @@ def extract_audio(video_file):
             FFMPEG_PATH, "-i", video_file, "-vn",  # 输入视频，忽略视频流
             "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", output_path  # 输出为 WAV 格式
         ]
-        subprocess.run(command, check=True)
+        subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         log(f"Audio extracted to: {output_path}")
         print("Audio extraction completed successfully.")
         return output_path
@@ -96,7 +96,7 @@ def run_pipeline():
         print(f"File not found: {e}. Check logs for details.")
     except Exception as e:
         log(f"Unexpected error: {e}")
-        print(f"An unexpected error occurred: {e}. Check logs for details.")
+        print(f"An unexpected error occurred. Check logs for details.")
 
 if __name__ == "__main__":
     run_pipeline()

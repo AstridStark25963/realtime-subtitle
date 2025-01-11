@@ -29,7 +29,7 @@ def extract_audio(video_file):
             FFMPEG_PATH, "-i", video_file, "-vn",
             "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", output_path
         ]
-        subprocess.run(command, check=True)
+        subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         log(f"Audio extracted to: {output_path}")
         print("Audio extraction completed successfully.")
         return output_path

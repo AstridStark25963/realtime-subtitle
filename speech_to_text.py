@@ -3,6 +3,7 @@ import wave
 import json
 import os
 from datetime import datetime
+from tqdm import tqdm  # 添加进度条库
 
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "tools", "models")
 TEMP_DIR = os.path.join(os.path.dirname(__file__), "temp")
@@ -34,19 +35,23 @@ def recognize_audio_with_timestamps(model, audio_file):
     recognizer = KaldiRecognizer(model, 16000)
     recognizer.SetWords(True)
     results = []
+
     with wave.open(audio_file, "rb") as wf:
-        while True:
-            data = wf.readframes(4000)
-            if len(data) == 0:
-                break
-            if recognizer.AcceptWaveform(data):
-                result = json.loads(recognizer.Result())
-                for word in result.get("result", []):
-                    results.append({
-                        "text": word["word"],
-                        "start": word["start"],
-                        "end": word["end"]
-                    })
+        total_frames = wf.getnframes()  # 获取总帧数
+        with tqdm(total=total_frames, desc="Processing audio", unit="frames") as pbar:
+            while True:
+                data = wf.readframes(4000)
+                if len(data) == 0:
+                    break
+                if recognizer.AcceptWaveform(data):
+                    result = json.loads(recognizer.Result())
+                    for word in result.get("result", []):
+                        results.append({
+                            "text": word["word"],
+                            "start": word["start"],
+                            "end": word["end"]
+                        })
+                pbar.update(4000)  # 更新进度条
     return results
 
 def log(message):
@@ -74,6 +79,3 @@ def main():
     except Exception as e:
         log(f"Error: {e}")
         print("An error occurred. Check the log file for details.")
-
-if __name__ == "__main__":
-    main()
